@@ -1,19 +1,31 @@
 <?php
 
+if ( ! defined( 'ABSPATH' ) ) { 
+    exit; // Exit if accessed directly
+}
+
 /*
-Plugin Name: Customer Price
-Plugin URI: http://webcodesigner/
-Description: Set each user a custom price for each product using a CSV file
+Plugin Name: WooCommerce CSV Price Manager
+Plugin URI: http://webcodesigner.com/
+Description: Use CSV files to update product prices or to set custom prices for each user by using the product SKU and a user's CustomerID.
 Author: Cristian Ionel
 Version: 1.0
-Author URI: http://webcodesigner/
+Author URI: http://webcodesigner.com/
 */
 
+// Create the new table required when the plugin is activated
+register_activation_hook( __FILE__, 'on_activation_create_custom_prices_table');
 
-class CustomerPrice
+
+/**
+ * Every single plugin action (beside the "activate" hook callback) is controlled
+ * by this class. It will only instantiate if woocommerce is installed and
+ * activated.
+ */
+class WooCommerceCSVPriceManager
 {
     /**
-     * Holds the values to be used in the fields callbacks
+     * Values used in the fields callbacks
      */
     private $options;
 
@@ -25,11 +37,9 @@ class CustomerPrice
     {
     	global $wpdb;
 
-    	//delete_option( 'custom_prices_table_created' );
-    	$this->table_name = $wpdb->prefix .'woocommerce_custom_prices';
+    	$this->table_name = get_option('custom_prices_table_name');
 
-    	// Create custom table and initiate plugins
-    	add_action( 'admin_init', array( $this, 'create_custom_prices_table' ) );
+    	// Create the settings page and controls
         add_action( 'admin_menu', array( $this, 'add_plugin_page' ),99);
         add_action( 'admin_init', array( $this, 'custom_prices_admin_page_init' ) , 99);
 
@@ -56,18 +66,18 @@ class CustomerPrice
     }
 
     /**
-     * Add options page
+     * Add the control page
      */
     public function add_plugin_page()
     {
-        // This page will be under "WooCommerce"
+        // This settings page will be under "WooCommerce"
         add_submenu_page( 
-        	'woocommerce', 
-        	'Update products prices using CSV files',  
-        	'Custom Prices', 
+        	'woocommerce',
+        	'Update products prices using CSV files',
+        	'Customer Pricing',
         	'manage_woocommerce', 
-        	'custom-prices-admin', 
-        	array( $this, 'create_custom_prices_admin_page' ) 
+        	'custom-prices-admin',
+        	array( $this, 'create_custom_prices_admin_page' )
         );
     }
 
@@ -293,7 +303,7 @@ class CustomerPrice
 
 	  	if ('text/csv' != $_FILES["sp"]["type"]) {
 	  		add_settings_error(
-		        'csp_files_updated',
+		        'sp_files_updated',
 		        'settings_updated',
 		        'Wrong File Type. Please upload a CSV file',
 		        'error'
@@ -447,6 +457,7 @@ class CustomerPrice
 	  
 	}
 
+	// Triggered by the "Clear Custom Prices" button from a user's profile page
 	private function clear_custom_prices()
 	{
 		if( !empty($_POST["clear_custom_prices"]) && $_POST["clear_custom_prices"] )
@@ -481,24 +492,7 @@ class CustomerPrice
 
 	}
 
-    public function sanitize_file_upload($input)
-    {
-    	/* default output */
-		    $output = '';
-		 
-		    /* check file type */
-		    $filetype = wp_check_filetype( $input );
-		    $mime_type = $filetype['type'];
-		 
-		    /* only mime type "image" allowed */
-		    if ( strpos( $mime_type, 'text/csv' ) !== false ){
-		        $output = $input;
-		    }
-		 
-		    return $output;
-    }
-
-
+	// Adds the CustomerID meta field and the button for resetting prices
 	public function add_user_meta_field( $user )
 	{
 		if ( current_user_can( 'edit_user', $user->ID ) ){
@@ -526,7 +520,7 @@ class CustomerPrice
 		}
 	}
 
-
+	// Save the customerid meta field. If the "Clear Custom Prices" button is pressed, clear the prices associated to this user
 	public function save_extra_user_meta_field( $user_id )
 	{
 		if ( current_user_can( 'edit_user', $user_id ) ){
@@ -541,28 +535,8 @@ class CustomerPrice
 		}
 	}
 
-
-    public function create_custom_prices_table()
-    {
-    	if (!get_option('custom_prices_table_created')) {
-			global $wpdb;
-			$charset_collate = $wpdb->get_charset_collate();
-			$sql = "CREATE TABLE $this->table_name (
-				ID int NOT NULL AUTO_INCREMENT,
-				CustomerID mediumint(9) NOT NULL,
-				SKU varchar(9) NOT NULL,
-				Price decimal(8, 2) NOT NULL,
-				PRIMARY KEY (`ID`),
-				UNIQUE KEY (`CustomerID`, `SKU`)
-			) $charset_collate;";
-
-			require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
-			dbDelta( $sql );
-
-			add_option( 'custom_prices_table_created', true );
-		}		
-	}
-
+	// Called each time a CSV file is updated to detect the delimiter used
+	// This avoid hardcoding the delimter to ',' or ';'
 	public function detectDelimiter($csvFile)
 	{
 	    $delimiters = array(
@@ -582,7 +556,7 @@ class CustomerPrice
 	    return array_search(max($delimiters), $delimiters);
 	}
 
-	// overites the display price of a product if a users with a customerid is logged in
+	// Overrides the display price of a product if a users with a customerid is logged in
 	public function return_custom_product_price($price, $product)
 	{
 		$user = wp_get_current_user();
@@ -629,15 +603,42 @@ class CustomerPrice
 	}
 }
 
-$my_settings_page = new CustomerPrice();
 
+/**
+* Creates the table which holds the custom prices for each user
+* This is only called once, when the plugin is activated
+**/
 
-
-
-function dd($var)
+function on_activation_create_custom_prices_table()
 {
-	echo '<pre>';
-	print_r($var);
-	echo '</pre>';
-	exit(0);
+	if ( !get_option('custom_prices_table_name') ) {
+
+		global $wpdb;
+		$custom_prices_table_name = $wpdb->prefix.'woocommerce_custom_prices';
+
+		$charset_collate = $wpdb->get_charset_collate();
+		$sql = "CREATE TABLE $custom_prices_table_name (
+			ID int NOT NULL AUTO_INCREMENT,
+			CustomerID mediumint(9) NOT NULL,
+			SKU varchar(9) NOT NULL,
+			Price decimal(8, 2) NOT NULL,
+			PRIMARY KEY (`ID`),
+			UNIQUE KEY (`CustomerID`, `SKU`)
+		) $charset_collate;";
+
+		require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
+		dbDelta( $sql );
+
+		add_option( 'custom_prices_table_name', $custom_prices_table_name );
+			
+	}		
+}
+
+/**
+ * Check if WooCommerce is active before instantiation the plugin
+ **/
+
+if ( in_array( 'woocommerce/woocommerce.php', apply_filters( 'active_plugins', get_option( 'active_plugins' ) ) ) ) 
+{
+    $customer_prices_settings = new WooCommerceCSVPriceManager();
 }
