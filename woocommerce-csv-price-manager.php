@@ -87,20 +87,20 @@ class WooCommerceCSVPriceManager
     public function create_custom_prices_admin_page()
     {
     	$this->clear_custom_prices();
-    	$this->handle_csp_file_upload();
-    	$output = $this->handle_sp_file_upload();
+
+    	$csp_output = $this->handle_csp_file_upload();
+    	$sp_output =  $this->handle_sp_file_upload();
 
     	$this->options['csp_file'] = get_option('csp_file');
     	$this->options['sp_file'] = get_option('sp_file');
 
         ?>
         <div class="wrap">
-        	<?php settings_errors(); ?>
 
             <h2>Adjust Product Prices using CSV files</h2>
-
+            
+            <form name="custom_prices_form" method="post" action="" enctype="multipart/form-data" style="display:none">
             <hr>
-            <form name="custom_prices_form" method="post" action="" enctype="multipart/form-data">
             <h2>Clear Custom Prices</h2>
             <p>Use this button to delete all existing customer specific product prices.</p>
             <input type="hidden" name="clear_custom_prices" value="true"></input>
@@ -116,11 +116,28 @@ class WooCommerceCSVPriceManager
             <?php
                 do_settings_sections( 'custom-prices-admin' );
                 wp_nonce_field( 'custom_prices_form' );
-                submit_button('Update Custom Prices'); 
+                submit_button('Update Prices'); 
             ?>
 
             </form>
-            <?php echo $output; ?>
+            
+            <?php
+            // File upload output
+            if($csp_output)
+            {
+            	echo "<h4> Customer Price List Upload Results:</h4><hr>";
+            	echo $csp_output;
+            }
+            if($sp_output)
+            {
+            	echo "<h4> List Prices Upload Results:</h4><hr>";
+            	echo $sp_output;
+            }
+
+            // File upload errors
+            settings_errors();
+
+            ?>
         </div>
         <?php
     }
@@ -132,7 +149,7 @@ class WooCommerceCSVPriceManager
     {        
 
 
-        // Settings section for both CSV file types (CustomerID/SKU/Price and SKU/Price)
+        // Settings section for both CSV file types (Customer Price List and List Prices)
         add_settings_section(
             'custom_prices_settings_section', // ID
             'Upload your CSV files', // Title
@@ -141,19 +158,19 @@ class WooCommerceCSVPriceManager
         );  
         
 
-        // CustomerID/SKU/Price file
+        // Customer Price List file
         add_settings_field(
             'csp', 
-            'CustomerID/SKU/Price CSV', 
+            'Upload Customer Price List', 
             array( $this, 'input_csp_file_upload' ), 
             'custom-prices-admin', 
             'custom_prices_settings_section'
         );
 
-        // SKU/Price file
+        // List Prices file
         add_settings_field(
             'sp', 
-            'SKU/Price CSV', 
+            'Upload List Prices', 
             array( $this, 'input_sp_file_upload' ), 
             'custom-prices-admin', 
             'custom_prices_settings_section'
@@ -162,27 +179,27 @@ class WooCommerceCSVPriceManager
     }
 
 
-  	// CustomerID/SKU/Price file input
+  	// Customer Price List file input
 	public function input_csp_file_upload()
 	{ 
 		?>
 	    <input type="file" name="csp" /> 
 	    <?php 
     	if(!empty($this->options['csp_file'])){
-    		echo '<a href="'.$this->options['csp_file'].'" download>Download</a> the previous CustomerID/SKU/Price CSV file used.';
+    		echo '<a href="'.$this->options['csp_file'].'" download>Download</a> the previous Customer Price List CSV file used.';
     	}else{
     		echo 'No CSV file has been uploaded yet.';
     	}
 	}
 
-	// SKU/Price file input
+	// List Prices file input
 	public function input_sp_file_upload()
 	{ 
 		?>
 	    <input type="file" name="sp" /> 
 	    <?php 
     	if(!empty($this->options['sp_file'])){
-    		echo '<a href="'.$this->options['sp_file'].'" download>Download</a> the previous SKU/Price CSV file used.';
+    		echo '<a href="'.$this->options['sp_file'].'" download>Download</a> the previous List Prices CSV file used.';
     	}else{
     		echo 'No CSV file has been uploaded yet.';
     	}
@@ -196,9 +213,9 @@ class WooCommerceCSVPriceManager
 	}
 
     /**
-    * Process the CustomerID/SKU/Price file input
+    * Process the Customer Price List file input
     *
-    * @return string Path to the CustomerID/SKU/Price file
+    * @return string Path to the Customer Price List file
 	*/
 	private function handle_csp_file_upload()
 	{
@@ -209,23 +226,19 @@ class WooCommerceCSVPriceManager
 		  		die('Security Check!');
 		  	}
 
-		  	if ('text/csv' != $_FILES["csp"]["type"]) {
-		  		add_settings_error(
-			        'csp_files_updated',
-			        'settings_updated',
-			        'Wrong File Type. Please upload a CSV file',
-			        'error'
-			    );
-			    return false;
+		  	if ( !$this->isCSVFileType($_FILES["csp"]["type"]) ) {
+		  		return false;
 		  	}
+
 		  	
 		  	$urls = wp_handle_upload($_FILES["csp"], array('test_form' => FALSE));
 		    $movefile = $urls['url'];
+		    
 
 		    //Import uploaded file to Database
 		    global $wpdb;
 		    $entries = 0;
-
+			$output = '';
 	        $handle = fopen($movefile, "r");
 		    $delimiter = $this->detectDelimiter($movefile);
 		    
@@ -242,12 +255,14 @@ class WooCommerceCSVPriceManager
 
 				    $new_price = wc_format_decimal( $data[2], wc_get_price_decimals() );
 
+				    $update_row = array(
+		    			'CustomerID' => $data[0],
+		    			'SKU' => $data[1],
+		    			'Price' => $new_price
+	    			);
+
 				    $update = $wpdb->replace($this->table_name, 
-				    	array(
-					        "CustomerID" => $data[0],
-					        "SKU" => $data[1],
-					        "Price" => $new_price
-				    	), 
+				    	$update_row, 
 						array( 
 			                '%d',
 							'%s', 
@@ -257,39 +272,55 @@ class WooCommerceCSVPriceManager
 
 			    	if($update){
 			    		$entries++;
+
+			    		// Show which Customer Prices were updated
+			    		$output .= "<div style='background-color:#fff; padding: 6px 15px; margin: 5px 0;'>".'
+			    				Customer ID: <strong> '.$update_row['CustomerID'].'</strong>, 
+							    Product SKU: <strong> '.$update_row['SKU'].'</strong>, 
+							    Customer Price: <strong>'.get_woocommerce_currency_symbol().$update_row['Price'].'</strong></div>';
 			    	}		    	
 		    	}	
 		    	
 			}
 			// if we updated at least one row
 			if($entries > 1) {
+				// Show the updated message
 				add_settings_error(
 			        'csp_files_updated',
 			        'settings_updated',
-			        'CustomerID/SKU/Price file uploaded. <strong>'.($entries-1).'</strong> prices updated.',
+			        'Customer Price List file uploaded. <strong>'.($entries-1).'</strong> prices updated.',
 			        'updated'
 			    );
+				
+
+			    // Clear prduct transients
 			    WC_Cache_Helper::get_transient_version( 'product', true );
+
+			    // Set the 'previous' csp_file path
 		    	update_option('csp_file', $movefile);
+
+		    	return $output;
+
 			} else {
 				add_settings_error(
 			        'csp_files_updated',
 			        'settings_updated',
-			        'CustomerID/SKU/Price file uploaded but no price was updated. Please check the file and try again',
+			        'Customer Price List file uploaded but no price was updated. Please check the file and try again',
 			        'error'
 			    );
+			    return false;
 			}
-	
+			
 	  	}
-	  
-	  
+
+		return false;
 	}
 
 
     /**
-    * Process the SKU/Price file input
+    * Process the List Prices file input
     *
-    * @return string Path to the SKU/Price file
+    * @return string Path to the List Prices file
 	*/
 	private function handle_sp_file_upload()
 	{
@@ -301,14 +332,8 @@ class WooCommerceCSVPriceManager
 	  		die('Security Check!');
 	  	}
 
-	  	if ('text/csv' != $_FILES["sp"]["type"]) {
-	  		add_settings_error(
-		        'sp_files_updated',
-		        'settings_updated',
-		        'Wrong File Type. Please upload a CSV file',
-		        'error'
-		    );
-		    return false;
+	  	if ( !$this->isCSVFileType($_FILES["sp"]["type"]) ) {
+	  		return false;
 	  	}
 
 
@@ -320,7 +345,7 @@ class WooCommerceCSVPriceManager
 	    global $wpdb;
 	    $entries = 0;
 	    $output = '';
-	    $update_flag = false;
+	    $update_flag = 0;
         $handle = fopen($movefile, "r");
 	    $delimiter = $this->detectDelimiter($movefile);
 	    
@@ -409,30 +434,31 @@ class WooCommerceCSVPriceManager
 
 		    			$updates = $price_updates + $regular_price_updates;
 
+		    			$output .= "<div style='background-color:#fff; padding: 6px 15px; margin: 5px 0;'>";
 		    			$output .= "<strong>SKU: ".$sku."</strong><br>";
 
 						if ($updates) {
 						    $output .= "Updated $updates row(s).<br>";
-						    $output .= 'Product with SKU:'.$sku.') from old price: ' . $current_regular_price. 
-						    	' to new price: '. $new_price.'.<br>';
-						    $update_flag = true;
+						    $output .= 'Product with SKU:'.$sku.', from old price: '.get_woocommerce_currency_symbol().
+						    			$current_regular_price.' to new price: '. get_woocommerce_currency_symbol().$new_price.'.';
+						    $update_flag += 1;
 						} elseif( false === $updates ){
-						    $output .= 'Failed to update SKU: '.$sku. ' ,please check the CSV file and try again.<br>';
+						    $output .= 'Failed to update, please check the CSV file and try again.';
 						} else {
-							$output .= 'No update needed for SKU: '.$sku. '. Current price is the same as the new price: '.$current_regular_price.'<br>';
+							$output .= 'No update needed. Existing price is the same as the new price ('.get_woocommerce_currency_symbol().$current_regular_price.').';
 						}
 		    			
-		    			$output .= "<hr>";
+		    			$output .= "</div>";
 
 		    		}else{
-		    			$output .= "No current price set for SKU: ".$sku.'<br>';
+		    			$output .= "<div class='error'><p>No current price set for SKU: ".$sku.'.</p></div>';
 		    		}
 		    	}else{
-		    		$output .= "There is no product with the SKU: ".$sku.'<br>';
+		    		$output .= "<div class='error'><p>There is no product with SKU: ".$sku.'. Please check the CSV file and try again.</p></div>';
 		    	} 
 
 		    }else{
-		    	$output .= "Incorrect number of columns or CSV data on row: ".$entries.". SKU:".$data[0].", Price:".$data[1].'<br>';
+		    	$output .= "<div class='error'><p>Incorrect number of columns or CSV data on row: ".$entries.". SKU:".$data[0].", Price:".$data[1].'. Please check the CSV file and try again.</p></div>';
 		    }
 
 		    $entries++;
@@ -444,7 +470,7 @@ class WooCommerceCSVPriceManager
 			add_settings_error(
 		        'sp_files_updated',
 		        'settings_updated',
-		        "Product prices updated",
+		        $update_flag." product prices updated.",
 		        'updated'
 		    );
 		    update_option( 'sp_file', $movefile );
@@ -457,7 +483,8 @@ class WooCommerceCSVPriceManager
 	  
 	}
 
-	// Triggered by the "Clear Custom Prices" button from a user's profile page
+	// Triggered by the "Clear Custom Prices" button (hidden by default)
+
 	private function clear_custom_prices()
 	{
 		if( !empty($_POST["clear_custom_prices"]) && $_POST["clear_custom_prices"] )
@@ -555,6 +582,36 @@ class WooCommerceCSVPriceManager
 
 	    return array_search(max($delimiters), $delimiters);
 	}
+
+	// Called each time a CSV file is updated to detect the file type
+	public function isCSVFileType($csvFile)
+	{
+	    $csv_mimetypes = array(
+			    'text/csv',
+			    'text/plain',
+			    'application/csv',
+			    'text/comma-separated-values',
+			    'application/excel',
+			    'application/vnd.ms-excel',
+			    'application/vnd.msexcel',
+			    'text/anytext',
+			    'application/octet-stream',
+			    'application/txt'
+			);
+			
+	  	if ( !in_array($csvFile, $csv_mimetypes) ) {
+	  		add_settings_error(
+		        'sp_files_updated',
+		        'settings_updated',
+		        'Wrong File Type. Please upload a CSV file',
+		        'error'
+		    );
+		    return false;
+	  	}
+
+	  	return true;
+	}
+
 
 	// Overrides the display price of a product if a users with a customerid is logged in
 	public function return_custom_product_price($price, $product)
