@@ -1,9 +1,5 @@
 <?php
 
-if ( ! defined( 'ABSPATH' ) ) { 
-    exit; // Exit if accessed directly
-}
-
 /*
 Plugin Name: WooCommerce CSV Price Manager
 Plugin URI: http://webcodesigner.com/
@@ -12,6 +8,10 @@ Author: Cristian Ionel
 Version: 1.0
 Author URI: http://webcodesigner.com/
 */
+
+if ( ! defined( 'ABSPATH' ) ) { 
+    exit; // Exit if accessed directly
+}
 
 // Create the new table required when the plugin is activated
 register_activation_hook( __FILE__, 'on_activation_create_custom_prices_table');
@@ -43,10 +43,10 @@ class WooCommerceCSVPriceManager
         add_action( 'admin_menu', array( $this, 'add_plugin_page' ),99);
         add_action( 'admin_init', array( $this, 'custom_prices_admin_page_init' ) , 99);
 
-        // Show User Profile CustomerID and Clear Custom Prices
+        // Show User Profile CustomerID and Clear Customer Prices
 		add_action( 'edit_user_profile', array( $this, 'add_user_meta_field' ) );
 
-		// Save User Profile CustomerID and trigger Clear Custom Prices
+		// Save User Profile CustomerID and trigger Clear Customer Prices
 		add_action( 'edit_user_profile_update', array( $this, 'save_extra_user_meta_field') );
 
     	// Set a custom price for products based on customerid and SKU
@@ -101,12 +101,12 @@ class WooCommerceCSVPriceManager
             
             <form name="custom_prices_form" method="post" action="" enctype="multipart/form-data" style="display:none">
             <hr>
-            <h2>Clear Custom Prices</h2>
+            <h2>Clear All Customer Prices</h2>
             <p>Use this button to delete all existing customer specific product prices.</p>
             <input type="hidden" name="clear_custom_prices" value="true"></input>
             <?php                
                 wp_nonce_field( 'clear_custom_prices_form' );
-                submit_button('Clear Custom Prices');
+                submit_button('Clear All Customer Prices');
             ?>
             </form>
 
@@ -483,7 +483,7 @@ class WooCommerceCSVPriceManager
 	  
 	}
 
-	// Triggered by the "Clear Custom Prices" button (hidden by default)
+	// Triggered by the "Clear Customer Prices" button (hidden by default)
 
 	private function clear_custom_prices()
 	{
@@ -537,7 +537,7 @@ class WooCommerceCSVPriceManager
             	<?php submit_button(); // a trick to avoid clearing prices if eneter key is pressed when editing a profile ?>
             </div>
             <tr>
-                <th><?php submit_button( 'Clear Custom Prices', 'delete', 'clear_customer_prices'); ?></th>
+                <th><?php submit_button( 'Clear Customer Prices', 'delete', 'clear_customer_prices'); ?></th>
                 <td>
                 <p>This will delete all the custom prices added for this customer.</p>                
                 </td>
@@ -678,7 +678,7 @@ function on_activation_create_custom_prices_table()
 			ID int NOT NULL AUTO_INCREMENT,
 			CustomerID mediumint(9) NOT NULL,
 			SKU varchar(9) NOT NULL,
-			Price decimal(8, 2) NOT NULL,
+			Price decimal(15, 6) NOT NULL,
 			PRIMARY KEY (`ID`),
 			UNIQUE KEY (`CustomerID`, `SKU`)
 		) $charset_collate;";
