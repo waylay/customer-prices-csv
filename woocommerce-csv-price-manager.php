@@ -212,10 +212,10 @@ class WooCommerceCSVPriceManager
 		<?php
 	}
 
-    /**
-    * Process the Customer Price List file input
-    *
-    * @return string Path to the Customer Price List file
+    	/**
+    	* Process the Customer Prices List file input
+    	*
+    	* @return string Path to the Customer Price List file
 	*/
 	private function handle_csp_file_upload()
 	{
@@ -232,17 +232,17 @@ class WooCommerceCSVPriceManager
 
 		  	
 		  	$urls = wp_handle_upload($_FILES["csp"], array('test_form' => FALSE));
-		    $movefile = $urls['url'];
+		    	$movefile = $urls['url'];
 		    
 
-		    //Import uploaded file to Database
-		    global $wpdb;
-		    $entries = 0;
+			//Import uploaded file to Database
+			global $wpdb;
+			$entries = 0;
 			$output = '';
-	        $handle = fopen($movefile, "r");
-		    $delimiter = $this->detectDelimiter($movefile);
+			$handle = fopen($movefile, "r");
+			$delimiter = $this->detectDelimiter($movefile);
 		    
-		    while (($data = fgetcsv($handle, 10000, $delimiter)) !== FALSE) {
+			while (($data = fgetcsv($handle, 10000, $delimiter)) !== FALSE) {
 
 			    // Skip the first row as is likely column names
 			    if ($entries === 0) {
@@ -346,7 +346,7 @@ class WooCommerceCSVPriceManager
 	    $entries = 0;
 	    $output = '';
 	    $update_flag = 0;
-        $handle = fopen($movefile, "r");
+	    $handle = fopen($movefile, "r");
 	    $delimiter = $this->detectDelimiter($movefile);
 	    
 
